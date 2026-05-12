@@ -25,7 +25,7 @@ fi
 ORG="LouisVuitton-CN"
 REPOS="${REPOS:-test-repo}"
 APP_NAME="${APP_NAME:-example}"
-TEAM_NAME="team-${APP_NAME}"
+TEAM_NAME="Team-${APP_NAME}"
 MAINTAINERS="${MAINTAINERS:-git-huangkn minyang-lv}"
 API_VERSION="2022-11-28"
 
@@ -113,6 +113,12 @@ ensure_maintainer() {
   local slug="$1"
   local username="$2"
 
+  # Defensive: skip if username is empty or contains whitespace
+  if [[ -z "$username" || "$username" =~ [[:space:]] ]]; then
+    log "WARNING: Skipping invalid maintainer username: '$username'"
+    return
+  fi
+
   log "Ensuring maintainer ${username} on team ${slug}"
 
   gh api --method PUT \
@@ -144,20 +150,34 @@ PARENT_ID=$(team_id "${PARENT_SLUG}")
 
 log "Resolved parent team ${PARENT_SLUG} with id ${PARENT_ID}"
 
-for MAINTAINER in ${MAINTAINERS}
-do
-  ensure_maintainer "${PARENT_SLUG}" "${MAINTAINER}"
-done
+
+# Only add maintainers if MAINTAINERS is non-empty
+if [ -n "${MAINTAINERS// /}" ]; then
+  for MAINTAINER in ${MAINTAINERS}
+  do
+    [ -n "$MAINTAINER" ] || continue
+    ensure_maintainer "${PARENT_SLUG}" "${MAINTAINER}"
+  done
+else
+  log "No maintainers specified, skipping maintainer assignment."
+fi
 
 READER_SLUG=$(upsert_team "${TEAM_NAME}-Reader" "Team ${APP_NAME} Reader" "pull" "${PARENT_ID}")
 CONTRIBUTOR_SLUG=$(upsert_team "${TEAM_NAME}-Contributor" "Team ${APP_NAME} Contributor" "push" "${PARENT_ID}")
 ADMIN_SLUG=$(upsert_team "${TEAM_NAME}-Administrator" "Team ${APP_NAME} Administrator" "" "${PARENT_ID}")
 
-for REPO in ${REPOS}
-do
-  ensure_repo_permission "${READER_SLUG}" "${REPO}" "pull"
-  ensure_repo_permission "${CONTRIBUTOR_SLUG}" "${REPO}" "push"
-  ensure_repo_permission "${ADMIN_SLUG}" "${REPO}" "admin"
-done
+
+# Only set repo permissions if REPOS is non-empty
+if [ -n "${REPOS// /}" ]; then
+  for REPO in ${REPOS}
+  do
+    [ -n "$REPO" ] || continue
+    ensure_repo_permission "${READER_SLUG}" "${REPO}" "pull"
+    ensure_repo_permission "${CONTRIBUTOR_SLUG}" "${REPO}" "push"
+    ensure_repo_permission "${ADMIN_SLUG}" "${REPO}" "admin"
+  done
+else
+  log "No repos specified, skipping repo permission assignment."
+fi
 
 log "Team sync completed for app ${APP_NAME}"
